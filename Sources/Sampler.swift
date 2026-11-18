@@ -7,7 +7,7 @@ struct Proc: Identifiable {
     let tool: String?
     let cwd: String?
     let cpu: Double            // % of one core since the previous sample
-    let rss: Double            // bytes
+    let mem: Double            // bytes: footprint for own processes, RSS for others
     let io: Double?            // bytes/s, own processes only
     let gpu: Double?           // % of the GPU
     let age: TimeInterval
@@ -48,7 +48,10 @@ struct Snapshot {
     var cores = ProcessInfo.processInfo.activeProcessorCount
     var load = [0.0, 0, 0]
     var cpuBusy: Double?
-    var memUsed = 0.0
+    var memApp = 0.0
+    var memWired = 0.0
+    var memCompressed = 0.0
+    var memUsed: Double { memApp + memWired + memCompressed }
     var memTotal = Sys.memTotal
     var pressure: Int32 = 1
     var swapUsed = 0.0
@@ -125,7 +128,7 @@ final class Sampler {
             }
             prevTicks = ticks
         }
-        s.memUsed = Sys.memUsed()
+        (s.memApp, s.memWired, s.memCompressed) = Sys.memory()
         s.pressure = Sys.memPressure()
         s.swapUsed = Sys.swapUsed()
         if let d = Sys.disk() {
@@ -169,7 +172,11 @@ final class Sampler {
         var avg: [Int32: Double] = [:]
         var nextCPU: [Int32: TimeInterval] = [:]
         var nextIO: [Int32: UInt64] = [:]
+        // RSS misses compressed and swapped pages (a VM with 12 GB footprint shows 80 MB RSS), so own
+        // processes use the physical footprint like Activity Monitor; others fall back to RSS.
+        var mem: [Int32: Double] = [:]
         for r in parsed {
+            mem[r.pid] = Double(r.rssKB) * 1024
             nextCPU[r.pid] = r.cpuTime
             if let p = prevCPU[r.pid], dt > 0 { cpu[r.pid] = max(0, (r.cpuTime - p) / dt * 100) } else { cpu[r.pid] = r.pcpu }
             var w = windows[r.pid] ?? CPUWindow()
@@ -183,6 +190,7 @@ final class Sampler {
                 $0.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) { proc_pid_rusage(r.pid, RUSAGE_INFO_V4, $0) }
             } == 0
             if ok {
+                mem[r.pid] = Double(ri.ri_phys_footprint)
                 let bytes = ri.ri_diskio_bytesread + ri.ri_diskio_byteswritten
                 if let p = prevIO[r.pid], dt > 0, bytes >= p { io[r.pid] = Double(bytes - p) / dt }
                 nextIO[r.pid] = bytes
@@ -200,17 +208,17 @@ final class Sampler {
         func proc(_ r: ProcRow) -> Proc {
             let i = describe(r)
             return Proc(pid: r.pid, title: i.title, tool: i.tool, cwd: i.cwd, cpu: cpu[r.pid] ?? 0,
-                        rss: Double(r.rssKB) * 1024, io: io[r.pid], gpu: gpu[r.pid], age: r.elapsed,
+                        mem: mem[r.pid] ?? 0, io: io[r.pid], gpu: gpu[r.pid], age: r.elapsed,
                         avgCPU: avg[r.pid], ignoreKey: r.path + " " + (i.tool ?? ""))
         }
         func top(_ n: Int, above floor: Double, by key: (ProcRow) -> Double) -> [Proc] {
             parsed.filter { key($0) > floor }.sorted { key($0) > key($1) }.prefix(n).map(proc)
         }
         s.topCPU = top(6, above: 0.5) { cpu[$0.pid] ?? 0 }
-        s.topMem = top(6, above: 0) { Double($0.rssKB) }
+        s.topMem = top(8, above: 0) { mem[$0.pid] ?? 0 }
         s.topIO = top(6, above: 100_000) { io[$0.pid] ?? 0 }
         s.topGPU = top(6, above: 0.5) { gpu[$0.pid] ?? 0 }
-        s.dockerVMCPU = parsed.first { $0.name == "com.apple.Virtualization.VirtualMachine" }.flatMap { cpu[$0.pid] }
+        s.dockerVMCPU = parsed.first { $0.name == Self.vmProcess && describe($0).tool == "für Docker" }.flatMap { cpu[$0.pid] }
         // Orphan: own process whose parent died (re-parented to launchd), not a regular app, busy for long.
         s.orphans = parsed.filter { r in
             r.ppid == 1 && r.uid == me && (avg[r.pid] ?? 0) >= Limits.hotCPU
@@ -218,12 +226,31 @@ final class Sampler {
         }.map(proc).filter { !ignored.contains($0.ignoreKey) }
     }
 
+    private static let vmProcess = "com.apple.Virtualization.VirtualMachine"
+
     private func describe(_ r: ProcRow) -> (path: String, title: String, tool: String?, cwd: String?) {
         if let i = info[r.pid] { return i }
         let args = Self.args(r.pid)
-        let i = (r.path, Describe.title(path: r.path, args: args), Describe.tool(path: r.path, args: args), Self.cwd(r.pid))
+        let title = r.name == Self.vmProcess ? "Virtuelle Maschine" : Describe.title(path: r.path, args: args)
+        var tool = Describe.tool(path: r.path, args: args)
+        // XPC services and VMs run under launchd; name the app they work for ("für Docker").
+        if tool == nil, let owner = Sys.responsiblePid(r.pid).flatMap(Self.appName), !title.contains(owner) {
+            tool = "für \(owner)"
+        }
+        let i = (r.path, title, tool, Self.cwd(r.pid))
         info[r.pid] = i
         return i
+    }
+
+    /// "Docker" for /Applications/Docker.app/Contents/MacOS/com.docker.backend, else the executable name.
+    private static func appName(_ pid: Int32) -> String? {
+        var buf = [CChar](repeating: 0, count: 4096)
+        guard proc_pidpath(pid, &buf, 4096) > 0 else { return nil }
+        let path = String(cString: buf)
+        if let r = path.range(of: ".app/") {
+            return (String(path[..<r.lowerBound]) as NSString).lastPathComponent
+        }
+        return (path as NSString).lastPathComponent
     }
 
     /// Command-line arguments (own processes only).

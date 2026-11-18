@@ -57,8 +57,10 @@ struct PanelView: View {
             case .mem:
                 Header(left: "\(Fmt.gb(s.memUsed)) von \(Fmt.gb(s.memTotal)) · Druck: \(pressureNames[s.pressure] ?? "\(s.pressure)")",
                        right: "Swap \(Fmt.gb(s.swapUsed))", rightColor: s.swapUsed > 1_073_741_824 ? .orange : .secondary)
+                Header(left: "Apps \(Fmt.gb(s.memApp)) · System \(Fmt.gb(s.memWired)) · Komprimiert \(Fmt.gb(s.memCompressed))")
                 Spark(points: recent, value: \.mem, warn: 85, color: levelColor(s.memLevel))
-                ForEach(s.topMem) { ProcLine(title: $0.title, value: Fmt.gb($0.rss), sub: $0.origin) }
+                ForEach(s.topMem) { ProcLine(title: $0.title, value: Fmt.gb($0.mem), sub: $0.origin) }
+                Note("Wie die Aktivitätsanzeige: inklusive komprimierter und ausgelagerter Seiten, daher größer als „Apps“. Fremde Prozesse (root) nur mit residentem Speicher.")
             case .ssd:
                 Header(left: "R \(Int(s.readBps / 1_048_576)) · W \(Int(s.writeBps / 1_048_576)) MB/s", right: "\(Int(s.iops)) IOPS")
                 Spark(points: recent, value: \.ssd, warn: Limits.diskMBps, color: levelColor(s.diskLevel))
@@ -162,24 +164,23 @@ struct TabBar: View {
             tile(.ssd, "SSD", "\(Int(s.diskMBps.rounded()))", s.diskLevel)
             tile(.gpu, "GPU", s.gpuUtil.map { "\(Int($0))%" } ?? "–", 0)
             tile(.temp, "Temp", s.temps.soc.map { "\(Int($0))°" } ?? "–", s.tempLevel)
-            tile(.docker, nil, "shippingbox", s.dockerLevel)
-            tile(.ports, nil, "network", 0)
+            tile(.docker, nil, s.dockerUp ? "\(s.containers.count)" : "–", s.dockerLevel, icon: "shippingbox")
+            tile(.ports, nil, "\(s.ports.count)", 0, icon: "network")
         }
     }
 
-    /// A tile with a label shows a value; without a label, `value` is an SF Symbol.
-    private func tile(_ tab: Tab, _ label: String?, _ value: String, _ level: Int) -> some View {
+    /// A tile shows a label or an SF Symbol above its value.
+    private func tile(_ tab: Tab, _ label: String?, _ value: String, _ level: Int, icon: String? = nil) -> some View {
         Button { m.tab = tab } label: {
             VStack(spacing: 0) {
-                if let label {
-                    Text(label).font(.caption2).foregroundStyle(.secondary)
-                    Text(value).font(.system(size: 13, weight: .semibold)).monospacedDigit().foregroundStyle(levelColor(level))
+                if let icon {
+                    Image(systemName: icon).font(.system(size: 11)).foregroundStyle(.secondary).frame(height: 14)
                 } else {
-                    Image(systemName: value).font(.system(size: 13)).foregroundStyle(level > 0 ? levelColor(level) : .secondary)
-                        .frame(height: 30)
+                    Text(label ?? "").font(.caption2).foregroundStyle(.secondary)
                 }
+                Text(value).font(.system(size: 13, weight: .semibold)).monospacedDigit().foregroundStyle(levelColor(level))
             }
-            .frame(maxWidth: label == nil ? 30 : .infinity)
+            .frame(maxWidth: icon == nil ? .infinity : 34)
             .padding(.vertical, 4)
             .background(RoundedRectangle(cornerRadius: 6).fill(m.tab == tab ? Color.primary.opacity(0.08) : .clear))
             .overlay(RoundedRectangle(cornerRadius: 6).stroke(m.tab == tab ? Color.primary.opacity(0.25) : .clear, lineWidth: 0.5))

@@ -42,16 +42,27 @@ enum Sys {
         return (busy, busy + UInt64(t.2))
     }
 
-    /// Memory used like Activity Monitor counts it: app memory + wired + compressed.
-    static func memUsed() -> Double {
+    /// Memory used like Activity Monitor counts it, in bytes: app memory + wired + compressed (physical size).
+    static func memory() -> (app: Double, wired: Double, compressed: Double) {
         var s = vm_statistics64()
         var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64>.stride / MemoryLayout<integer_t>.stride)
         let r = withUnsafeMutablePointer(to: &s) {
             $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { host_statistics64(mach_host_self(), HOST_VM_INFO64, $0, &count) }
         }
-        guard r == KERN_SUCCESS else { return 0 }
-        let pages = UInt64(s.internal_page_count) - UInt64(s.purgeable_count) + UInt64(s.wire_count) + UInt64(s.compressor_page_count)
-        return Double(pages * pageSize)
+        guard r == KERN_SUCCESS else { return (0, 0, 0) }
+        let page = Double(pageSize)
+        return ((Double(s.internal_page_count) - Double(s.purgeable_count)) * page,
+                Double(s.wire_count) * page, Double(s.compressor_page_count) * page)
+    }
+
+    private typealias ResponsibleFn = @convention(c) (pid_t) -> pid_t
+    // Private libsystem call Activity Monitor uses to attribute XPC services and VMs to their app.
+    private static let responsibleFn: ResponsibleFn? = dlsym(dlopen(nil, RTLD_NOW), "responsibility_get_pid_responsible_for_pid")
+        .map { unsafeBitCast($0, to: ResponsibleFn.self) }
+
+    static func responsiblePid(_ pid: Int32) -> Int32? {
+        guard let r = responsibleFn?(pid), r > 0, r != pid else { return nil }
+        return r
     }
 
     /// 1 normal, 2 warning, 4 critical.

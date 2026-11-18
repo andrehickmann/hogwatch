@@ -115,19 +115,20 @@ final class Monitor: ObservableObject {
     func setPanelOpen(_ open: Bool) {
         panelOpen = open
         if open {
-            if tab == .ports { portsDue = true }
+            portsDue = true
             step()
         }
     }
 
-    /// Processes and Docker every 10 s, every 2 s while the panel is open; ports only on their tab.
+    /// Processes and Docker every 10 s, processes every 2 s while the panel is open. Ports (`lsof`, the
+    /// expensive part) only while the panel is open, every 10 s and right after opening.
     private func step() {
         guard !busy else { return }
         busy = true
         tick += 1
         let slow = tick % 5 == 1
         let procs = panelOpen || slow
-        let ports = panelOpen && tab == .ports && (slow || portsDue)
+        let ports = panelOpen && (slow || portsDue)
         portsDue = false
         let ignored = self.ignored
         queue.async { [sampler] in
@@ -222,7 +223,7 @@ final class Alerts {
         if load.update(s.load[0] >= cores * Limits.loadCritFactor, now: now) {
             post("Last kritisch: \(Int(s.load[0])) bei \(s.cores) Kernen", "Seit 2 Min. über \(Int(cores * Limits.loadCritFactor)). \(cpuHint)")
         }
-        let memHint = s.topMem.first.map { "Größter Verbraucher: \(Self.name($0)), \(Fmt.gb($0.rss))." } ?? ""
+        let memHint = s.topMem.first.map { "Größter Verbraucher: \(Self.name($0)), \(Fmt.gb($0.mem))." } ?? ""
         if memCrit.update(s.pressure >= 4, now: now) {
             post("Speicherdruck kritisch", "Swap \(Fmt.gb(s.swapUsed)). \(memHint)")
         } else if memWarn.update(s.pressure >= 2, now: now) {

@@ -26,12 +26,12 @@ behind it. Cmd-drag other icons out of the menu bar, or move hogwatch further ri
 | Tab | Content |
 | --- | --- |
 | CPU | load average, clock of performance/efficiency cores, top processes with origin (tool and working directory) |
-| RAM | used memory, memory pressure, swap, top processes |
+| RAM | used memory split into apps, wired and compressed; pressure, swap; top processes by footprint (like Activity Monitor), VMs and XPC services named after their app |
 | SSD | read/write MB/s, IOPS, top processes by disk IO (own processes only) |
 | GPU | utilisation, clock, top processes |
 | Temp | MacBook Pro 14" (M1 Pro) drawing with a heat map of the sensors; other Macs get a list. Throttling and low power mode |
-| Docker | running containers with CPU, uptime, ports; stop button |
-| Ports | listening TCP ports of own processes. Web servers open in the browser, others copy `localhost:<port>`; stop the process or container |
+| Docker | running containers with CPU, uptime, ports; stop button. The tab shows the container count |
+| Ports | listening TCP ports of own processes (count in the tab, read every 10 s while the panel is open). Web servers open in the browser, others copy `localhost:<port>`; stop the process or container |
 
 Above the tabs, a red banner lists **orphaned processes**: own processes whose parent died
 (re-parented to launchd), that are no regular app, and that used more than 50 % CPU on average over
