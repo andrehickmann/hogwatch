@@ -31,6 +31,7 @@ struct PanelView: View {
                 Toggle("Bei Anmeldung", isOn: Binding(get: { m.launchAtLogin }, set: { m.launchAtLogin = $0 }))
                     .toggleStyle(.checkbox)
                 Spacer()
+                InfoButton()
                 Button("Beenden") { NSApp.terminate(nil) }
             }
             .buttonStyle(.borderless)
@@ -84,6 +85,27 @@ struct PanelView: View {
                 PortsTab(m: m)
             }
         }
+    }
+}
+
+struct InfoButton: View {
+    static let repository = URL(string: "https://github.com/andrehickmann/hogwatch")!
+    @State private var shown = false
+
+    var body: some View {
+        Button { shown.toggle() } label: { Image(systemName: "info.circle") }
+            .help("Über hogwatch")
+            .popover(isPresented: $shown, arrowEdge: .bottom) {
+                VStack(alignment: .leading, spacing: 6) {
+                    let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+                    Text("hogwatch \(version)").font(.headline)
+                    Text("Zeigt, was den Mac auffrisst – CPU, Speicher, SSD, GPU, Temperatur, Docker und Ports – und warnt, bevor er unbenutzbar wird.")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Link("github.com/andrehickmann/hogwatch", destination: Self.repository).font(.caption)
+                }
+                .padding(12)
+                .frame(width: 250)
+            }
     }
 }
 
@@ -200,14 +222,16 @@ struct OrphanBanner: View {
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 4) {
                         Image(systemName: "exclamationmark.triangle.fill")
-                        Text(o.title).lineLimit(1)
-                        Text("\(Fmt.pct(o.avgCPU ?? o.cpu)) · \(Fmt.age(o.age))").font(.system(.caption, design: .monospaced))
-                        Spacer()
+                        Text(o.title).lineLimit(1).truncationMode(.middle)
+                        Spacer(minLength: 4)
                         ConfirmButton("Beenden") { m.terminate(o) }
                         Button("Ignorieren") { m.ignore(o) }.controlSize(.small)
                     }
                     .font(.callout)
-                    Text("verwaist" + (o.origin.map { " · \($0)" } ?? "")).font(.caption2).lineLimit(1).truncationMode(.middle)
+                    Text("\(Fmt.pct(o.avgCPU ?? o.cpu)) CPU · seit \(Fmt.age(o.age)) verwaist").font(.caption)
+                    if let origin = o.origin {
+                        Text(origin).font(.caption2).lineLimit(1).truncationMode(.middle)
+                    }
                 }
             }
         }

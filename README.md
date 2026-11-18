@@ -4,7 +4,18 @@ A small menu bar app for Apple Silicon Macs that shows what is eating your machi
 SSD, GPU, temperature, Docker and open ports — and tells you when it gets critical, naming the
 process behind it.
 
-<img src="docs/temperature-tab.png" alt="hogwatch panel with the temperature tab: a MacBook drawn from above with a heat map of the sensors" width="340">
+<p>
+  <img src="docs/cpu-tab.png" width="270" alt="CPU tab: load average, clock speeds, top processes with the tool and project they come from, and a red banner for an orphaned headless Chromium">
+  <img src="docs/temperature-tab.png" width="270" alt="Temperature tab: a MacBook drawn from above with a heat map of the sensors and the SoC temperature on its display">
+  <img src="docs/ports-tab.png" width="270" alt="Ports tab: listening ports with the process behind them; web servers open in the browser, every row has a stop button">
+</p>
+
+<img src="docs/history.png" width="620" alt="History window: load, memory, SSD, GPU and SoC temperature over 24 hours, with the top process at the hovered moment">
+
+Menu bar: <img src="docs/menubar.png" height="22" alt="menu bar icon showing load 44 on red with a warning sign">
+— the 1-minute load, coloured by the worst current state.
+
+<sub>Screenshots use made-up demo data (`hogwatch --demo`), except the temperature tab.</sub>
 
 It exists because a Mac once crawled along at a load average of 200: parallel test runs, Spotlight
 and two headless Chromiums left behind by Playwright that had been burning CPU for 15 days. Activity
@@ -120,8 +131,14 @@ Sources/Sampler.swift      builds a snapshot: processes, Docker, ports
 Sources/Monitor.swift      timer, history, alerts, actions, menu bar icon
 Sources/Views.swift        panel, tabs, heat map
 Sources/HistoryView.swift  history window
+Sources/Demo.swift         made-up data for screenshots (--demo)
 Sources/App.swift          app entry, notifications, --render dev aid
 Tests/main.swift           self-check
 ```
 
-`hogwatch --render <dir>` renders each tab to PNG and quits (development aid; scroll views stay empty).
+Development aids:
+
+- `hogwatch --demo` runs with made-up data (no sampling, no notifications, buttons do nothing) — used for the screenshots.
+- `hogwatch --render <dir>` renders each tab to PNG and quits (scroll views and AppKit controls do not render).
+
+The ⓘ button in the panel shows the version and links back to this repository.

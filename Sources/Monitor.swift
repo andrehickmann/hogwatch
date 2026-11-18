@@ -37,6 +37,13 @@ struct History {
         rewrite()
     }
 
+    /// In-memory history for the demo mode; never written.
+    init(recent: [Point], minutes: [Point]) {
+        file = FileManager.default.temporaryDirectory.appendingPathComponent("hogwatch-demo.jsonl")
+        self.recent = recent
+        self.minutes = minutes
+    }
+
     /// Adds a sample; writes the minute average to disk when a minute is complete.
     mutating func add(_ p: Point) {
         recent.append(p)
@@ -99,9 +106,12 @@ final class Monitor: ObservableObject {
     let alerts = Alerts()
     private var timer: Timer?
 
+    /// `--demo`: made-up data for screenshots, no sampling, no alerts, actions do nothing.
+    let demo = CommandLine.arguments.contains("--demo")
+
     init() {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("hogwatch")
-        history = History(file: dir.appendingPathComponent("history.jsonl"))
+        history = demo ? Demo.history(now: Date()) : History(file: dir.appendingPathComponent("history.jsonl"))
         ignored = Set(UserDefaults.standard.stringArray(forKey: "ignored") ?? [])
         statusImage = renderStatus()
         let t = Timer(timeInterval: 2, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.step() } }
@@ -123,6 +133,11 @@ final class Monitor: ObservableObject {
     /// Processes and Docker every 10 s, processes every 2 s while the panel is open. Ports (`lsof`, the
     /// expensive part) only while the panel is open, every 10 s and right after opening.
     private func step() {
+        if demo {
+            snap = Demo.snapshot(t: Date())
+            statusImage = renderStatus()
+            return
+        }
         guard !busy else { return }
         busy = true
         tick += 1
@@ -151,6 +166,7 @@ final class Monitor: ObservableObject {
     func terminate(_ p: Proc) { terminate(pid: p.pid) }
 
     func terminate(pid: Int32) {
+        guard !demo else { return } // demo pids are made up and may belong to real processes
         let q = queue
         queue.async { [sampler] in sampler.terminate(pid, on: q) }
         refreshPortsSoon()
@@ -169,6 +185,7 @@ final class Monitor: ObservableObject {
     }
 
     func stop(_ containerId: String) {
+        guard !demo else { return }
         DispatchQueue.global().async { Sampler.stopContainer(containerId) }
         refreshPortsSoon()
     }

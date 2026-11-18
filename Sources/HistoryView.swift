@@ -84,7 +84,15 @@ struct HistoryView: View {
                 }
             }
         }
-        .chartYAxis { AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) }
+        .chartYAxis {
+            // Fixed label width keeps the plot areas, and so the time axes, aligned across charts.
+            AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { value in
+                AxisGridLine()
+                AxisValueLabel {
+                    Text(value.as(Double.self).map { "\(Int($0))" } ?? "").frame(width: 32, alignment: .leading)
+                }
+            }
+        }
         .chartOverlay { proxy in
             GeometryReader { geo in
                 Rectangle().fill(.clear).contentShape(Rectangle())
