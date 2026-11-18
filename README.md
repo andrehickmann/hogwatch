@@ -27,7 +27,7 @@ behind it. Cmd-drag other icons out of the menu bar, or move hogwatch further ri
 | --- | --- |
 | CPU | load average, clock of performance/efficiency cores, top processes with origin (tool and working directory) |
 | RAM | used memory split into apps, wired and compressed; pressure, swap; top processes by footprint (like Activity Monitor), VMs and XPC services named after their app |
-| SSD | read/write MB/s, IOPS, top processes by disk IO (own processes only) |
+| SSD | health from NVMe SMART (wear, spare, media errors, TB written, written today), read/write MB/s, IOPS, top processes by disk IO (own processes only) |
 | GPU | utilisation, clock, top processes |
 | Temp | MacBook Pro 14" (M1 Pro) drawing with a heat map of the sensors; other Macs get a list. Throttling and low power mode |
 | Docker | running containers with CPU, uptime, ports; stop button. The tab shows the container count |
@@ -54,6 +54,7 @@ kept in `~/Library/Application Support/hogwatch/history.jsonl`.
 | Throttling | thermal pressure moderate or worse for 1 min |
 | Orphaned process | as described above, once per process |
 | Container | ≥ 50 % CPU on average over 10 min, once per container |
+| SSD health | controller reports a critical warning, spare below threshold or media errors |
 
 Each alert fires at most every 15 minutes and only again after the value was back to normal.
 Thresholds live in `Limits` in `Sources/Logic.swift`.
@@ -68,7 +69,9 @@ All readable without root:
 - IOKit: `IOBlockStorageDriver` statistics, `IOAccelerator` utilisation and per-client GPU time
 - Private APIs: `IOHIDEventSystemClient` (temperatures), `IOReport` (clock residencies), `com.apple.system.thermalpressurelevel`.
   If Apple removes them, those values show "–" and everything else keeps working.
-- Docker Engine API over the Unix socket (via `curl`), `lsof` for listening ports
+- NVMe SMART log through the `NVMeSMARTLib` IOKit plug-in, read every 10 minutes
+- Docker Engine API over the Unix socket (via `curl`), only while Docker Desktop's VM runs — any API call would wake it from Resource Saver
+- `lsof` for listening ports
 
 ## Layout
 

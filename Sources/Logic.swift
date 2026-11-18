@@ -140,6 +140,44 @@ enum Describe {
     }
 }
 
+/// NVMe SMART / health information log (log page 2, 512 bytes, little endian).
+struct SMART {
+    let criticalWarning: Int
+    let tempC: Int
+    let spare: Int             // % available spare
+    let spareThreshold: Int
+    let percentUsed: Int       // wear estimate by the controller
+    let readBytes: Double
+    let writtenBytes: Double
+    let powerCycles: UInt64
+    let powerOnHours: UInt64
+    let unsafeShutdowns: UInt64
+    let mediaErrors: UInt64
+
+    init?(log b: [UInt8]) {
+        guard b.count >= 192 else { return nil }
+        func u64(_ o: Int) -> UInt64 { (0..<8).reduce(0) { $0 | UInt64(b[o + $1]) << (8 * UInt64($1)) } }
+        let unit = 512_000.0 // a "data unit" is 1000 sectors of 512 bytes
+        criticalWarning = Int(b[0])
+        tempC = (Int(b[1]) | Int(b[2]) << 8) - 273
+        spare = Int(b[3])
+        spareThreshold = Int(b[4])
+        percentUsed = Int(b[5])
+        readBytes = Double(u64(32)) * unit
+        writtenBytes = Double(u64(48)) * unit
+        powerCycles = u64(112)
+        powerOnHours = u64(128)
+        unsafeShutdowns = u64(144)
+        mediaErrors = u64(160)
+    }
+
+    /// 0 good, 1 worn (≥ 80 %), 2 problem reported by the controller
+    var level: Int {
+        if criticalWarning != 0 || spare < spareThreshold || mediaErrors > 0 { return 2 }
+        return percentUsed >= 80 ? 1 : 0
+    }
+}
+
 enum Lsof {
     /// Parses `lsof -F pn` output into listening sockets.
     static func parse(_ s: String) -> [(pid: Int32, host: String, port: Int)] {
@@ -169,7 +207,13 @@ enum Fmt {
     }
 
     static func mb(_ bytes: Double) -> String {
-        bytes >= 1_073_741_824 ? gb(bytes) : "\(Int(bytes / 1_048_576)) MB"
+        if bytes >= 1_073_741_824 { return gb(bytes) }
+        let mb = bytes / 1_048_576
+        return mb < 10 ? mb.formatted(.number.precision(.fractionLength(1))) + " MB" : "\(Int(mb)) MB"
+    }
+
+    static func tb(_ bytes: Double) -> String {
+        (bytes / 1e12).formatted(.number.precision(.fractionLength(1))) + " TB"
     }
 
     static func ghz(_ mhz: Double?) -> String {

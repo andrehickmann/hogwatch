@@ -71,7 +71,11 @@ struct Snapshot {
     var topGPU: [Proc] = []
     var orphans: [Proc] = []
     var dockerUp = false
+    var dockerAsleep = false
     var dockerVMCPU: Double?
+    var smart: SMART?
+    var writtenToday: Double?
+    var writtenSince: Date?
     var containers: [Container] = []
     var ports: [Port] = []
 
@@ -112,6 +116,21 @@ final class Sampler {
     private var dockerWindows: [String: CPUWindow] = [:]
 
     private var webCache: [String: Bool] = [:]
+    private var lastSmart: TimeInterval = 0
+    private var dockerVMRunning = false
+
+    /// Bytes written since the first reading of the day, kept across restarts.
+    private static func writtenToday(_ written: Double, now: Date) -> (Double, Date) {
+        let d = UserDefaults.standard
+        let c = Calendar.current.dateComponents([.year, .month, .day], from: now)
+        let day = "\(c.year ?? 0)-\(c.month ?? 0)-\(c.day ?? 0)"
+        if d.string(forKey: "ssdDay") != day || d.double(forKey: "ssdBase") > written {
+            d.set(day, forKey: "ssdDay")
+            d.set(written, forKey: "ssdBase")
+            d.set(now.timeIntervalSince1970, forKey: "ssdBaseTime")
+        }
+        return (written - d.double(forKey: "ssdBase"), Date(timeIntervalSince1970: d.double(forKey: "ssdBaseTime")))
+    }
 
     func sample(procs: Bool, docker: Bool, ports: Bool, ignored: Set<String>) -> Snapshot {
         let now = Date()
@@ -151,6 +170,11 @@ final class Sampler {
         s.gpuUtil = gpu.util
         if procs { sampleProcesses(into: &s, t: t, gpuNs: gpu.nsByPid, ignored: ignored) }
         if docker { sampleDocker(into: &s, t: t) }
+        if t - lastSmart >= 600, let h = SSDHealth.read() {
+            lastSmart = t
+            s.smart = h
+            (s.writtenToday, s.writtenSince) = Self.writtenToday(h.writtenBytes, now: now)
+        }
         if ports { s.ports = samplePorts(containers: s.containers) }
         last = s
         return s
@@ -218,7 +242,9 @@ final class Sampler {
         s.topMem = top(8, above: 0) { mem[$0.pid] ?? 0 }
         s.topIO = top(6, above: 100_000) { io[$0.pid] ?? 0 }
         s.topGPU = top(6, above: 0.5) { gpu[$0.pid] ?? 0 }
-        s.dockerVMCPU = parsed.first { $0.name == Self.vmProcess && describe($0).tool == "für Docker" }.flatMap { cpu[$0.pid] }
+        let dockerVM = parsed.first { $0.name == Self.vmProcess && describe($0).tool == "für Docker" }
+        dockerVMRunning = dockerVM != nil
+        s.dockerVMCPU = dockerVM.flatMap { cpu[$0.pid] }
         // Orphan: own process whose parent died (re-parented to launchd), not a regular app, busy for long.
         s.orphans = parsed.filter { r in
             r.ppid == 1 && r.uid == me && (avg[r.pid] ?? 0) >= Limits.hotCPU
@@ -316,7 +342,10 @@ final class Sampler {
     }
 
     private func sampleDocker(into s: inout Snapshot, t: TimeInterval) {
-        guard let list = dockerGET("/containers/json") as? [[String: Any]] else {
+        // Every Engine API call wakes Docker Desktop's VM from Resource Saver; only ask while it runs anyway.
+        // ponytail: detects Docker Desktop's Apple-Virtualization VM; Colima/OrbStack would need their own check.
+        s.dockerAsleep = Self.dockerSocket != nil && !dockerVMRunning
+        guard !s.dockerAsleep, let list = dockerGET("/containers/json") as? [[String: Any]] else {
             s.dockerUp = false
             s.containers = []
             return

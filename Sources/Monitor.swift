@@ -212,6 +212,7 @@ final class Alerts {
     private var memWarn = AlertGate(sustain: Limits.memWarnSustain)
     private var disk = AlertGate(sustain: Limits.diskSustain)
     private var thermal = AlertGate(sustain: Limits.thermalSustain)
+    private var ssd = AlertGate(sustain: 0)
     private var notifiedOrphans = Set<Int32>()
     private var notifiedContainers = Set<String>()
 
@@ -236,6 +237,10 @@ final class Alerts {
         }
         if thermal.update(s.thermal >= 1, now: now) {
             post("Mac wird gedrosselt", "SoC \(Int(s.temps.soc ?? 0)) °C. \(cpuHint)")
+        }
+        if let h = s.smart, ssd.update(h.level == 2, now: now) {
+            post("SSD meldet ein Problem",
+                 "Warnung \(h.criticalWarning), Reserve \(h.spare) % (Grenze \(h.spareThreshold) %), \(h.mediaErrors) Medienfehler. Backup prüfen.")
         }
         for o in s.orphans where !notifiedOrphans.contains(o.pid) {
             post("Verwaister Prozess: \(o.title)",

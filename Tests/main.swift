@@ -52,6 +52,22 @@ check(Describe.tool(path: "/Applications/Spotify.app/Contents/MacOS/Spotify", ar
 let l = Lsof.parse("p123\nf4\nn*:5173\np456\nn127.0.0.1:8770\nn[::1]:5432\n")
 check(l.count == 3 && l[0].pid == 123 && l[0].port == 5173 && l[2].host == "[::1]" && l[2].pid == 456, "lsof parse")
 
+// SMART log: values from the real disk on 18.11.2026
+var log = [UInt8](repeating: 0, count: 512)
+log[1] = 0x3E; log[2] = 0x01        // 318 K
+log[3] = 100; log[4] = 99; log[5] = 10
+func put(_ v: UInt64, at o: Int) { for i in 0..<8 { log[o + i] = UInt8((v >> (8 * UInt64(i))) & 0xff) } }
+put(452_411_380, at: 48)            // data units written ≈ 231.6 TB
+put(7157, at: 128)
+put(11, at: 144)
+let smart = SMART(log: log)
+check(smart?.tempC == 45 && smart?.percentUsed == 10 && smart?.powerOnHours == 7157 && smart?.unsafeShutdowns == 11, "smart fields")
+check(abs((smart?.writtenBytes ?? 0) / 1e12 - 231.6) < 0.1, "smart written TB")
+check(smart?.level == 0, "healthy disk")
+log[160] = 1
+check(SMART(log: log)?.level == 2, "media error is a problem")
+check(SMART(log: [1, 2, 3]) == nil, "short log")
+
 check(Fmt.age(15 * 86400 + 5) == "15 T" && Fmt.age(3 * 3600) == "3 h" && Fmt.age(30) == "1 min", "age format")
 
 print(failures == 0 ? "selfcheck ok" : "selfcheck: \(failures) failure(s)")

@@ -63,6 +63,7 @@ struct PanelView: View {
                 Note("Wie die Aktivitätsanzeige: inklusive komprimierter und ausgelagerter Seiten, daher größer als „Apps“. Fremde Prozesse (root) nur mit residentem Speicher.")
             case .ssd:
                 Header(left: "R \(Int(s.readBps / 1_048_576)) · W \(Int(s.writeBps / 1_048_576)) MB/s", right: "\(Int(s.iops)) IOPS")
+                if let h = s.smart { SSDHealthView(h: h, today: s.writtenToday, since: s.writtenSince) }
                 Spark(points: recent, value: \.ssd, warn: Limits.diskMBps, color: levelColor(s.diskLevel))
                 ForEach(s.topIO) { ProcLine(title: $0.title, value: "\(Fmt.mb($0.io ?? 0))/s", sub: $0.origin) }
                 Note("IO von Systemprozessen (fseventsd, Spotlight) ist ohne Root nicht zuordenbar.")
@@ -252,7 +253,9 @@ struct DockerTab: View {
 
     var body: some View {
         let s = m.snap
-        if !s.dockerUp {
+        if s.dockerAsleep {
+            Note("Docker im Ruhemodus: keine Container, VM angehalten. hogwatch fragt erst wieder, wenn die VM läuft.")
+        } else if !s.dockerUp {
             Note("Docker läuft nicht.")
         } else {
             Header(left: "\(s.containers.count) Container", right: s.dockerVMCPU.map { "VM \(Fmt.pct($0)) CPU" } ?? "")
@@ -319,6 +322,38 @@ struct PortsTab: View {
             }
             .buttonStyle(.plain)
             .padding(.vertical, 2)
+    }
+}
+
+struct SSDHealthView: View {
+    let h: SMART
+    let today: Double?
+    let since: Date?
+
+    var body: some View {
+        let status = ["gut", "verschlissen", "Problem gemeldet"][h.level]
+        var todayText = ""
+        if let today, let since {
+            let midnight = Calendar.current.startOfDay(for: Date())
+            todayText = since.timeIntervalSince(midnight) < 1200
+                ? " · heute \(Fmt.mb(today))"
+                : " · \(Fmt.mb(today)) seit \(since.formatted(date: .omitted, time: .shortened))"
+        }
+        return VStack(alignment: .leading, spacing: 1) {
+            HStack {
+                Text("Gesundheit: \(status)").foregroundStyle(h.level == 0 ? Color.green : levelColor(h.level))
+                Spacer()
+                Text("Verschleiß \(h.percentUsed) %")
+            }
+            .font(.caption)
+            Text("\(Fmt.tb(h.writtenBytes)) geschrieben\(todayText) · \(h.mediaErrors) Fehler")
+                .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+        }
+        .padding(6)
+        .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.05)))
+        .help("Reserve \(h.spare) % (Grenze \(h.spareThreshold) %) · \(h.powerOnHours) Betriebsstunden · "
+              + "\(h.powerCycles) Einschaltvorgänge · \(h.unsafeShutdowns) unsaubere Abschaltungen · "
+              + "gelesen \(Fmt.tb(h.readBytes)) · \(h.tempC) °C")
     }
 }
 

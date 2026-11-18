@@ -121,6 +121,41 @@ enum Sys {
     }
 }
 
+// MARK: - SSD health (NVMe SMART through the NVMeSMARTLib IOKit plug-in, no root needed)
+
+enum SSDHealth {
+    private static func uuid(_ b: [UInt8]) -> CFUUID {
+        CFUUIDGetConstantUUIDWithBytes(nil, b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15])
+    }
+    private static let userClientType = uuid([0xAA, 0x0F, 0xA6, 0xF9, 0xC2, 0xD6, 0x45, 0x7F, 0xB1, 0x0B, 0x59, 0xA1, 0x32, 0x53, 0x29, 0x2F])
+    private static let smartInterface = uuid([0xCC, 0xD1, 0xDB, 0x19, 0xFD, 0x9A, 0x4D, 0xAF, 0xBF, 0x95, 0x12, 0x45, 0x4B, 0x23, 0x0A, 0xB6])
+    private static let plugInInterface = uuid([0xC2, 0x44, 0xE8, 0x58, 0x10, 0x9C, 0x11, 0xD4, 0x91, 0xD4, 0x00, 0x50, 0xE4, 0xC6, 0x42, 0x6F])
+
+    // IONVMeSMARTInterface: IUnknown (4 pointers), version + revision (padded to 8 bytes), then SMARTReadData.
+    private typealias ReadFn = @convention(c) (UnsafeMutableRawPointer, UnsafeMutableRawPointer) -> IOReturn
+    private typealias ReleaseFn = @convention(c) (UnsafeMutableRawPointer) -> UInt32
+
+    /// SMART log of the first NVMe disk (the internal SSD).
+    static func read() -> SMART? {
+        let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IONVMeBlockStorageDevice"))
+        guard service != 0 else { return nil }
+        defer { IOObjectRelease(service) }
+        var plugin: UnsafeMutablePointer<UnsafeMutablePointer<IOCFPlugInInterface>?>?
+        var score: Int32 = 0
+        guard IOCreatePlugInInterfaceForService(service, userClientType, plugInInterface, &plugin, &score) == KERN_SUCCESS,
+              let plugin, let vt = plugin.pointee?.pointee else { return nil }
+        defer { IODestroyPlugInInterface(plugin) }
+        var iface: LPVOID?
+        guard vt.QueryInterface(plugin, CFUUIDGetUUIDBytes(smartInterface), &iface) == 0, let iface else { return nil }
+        let table = iface.load(as: UnsafeRawPointer.self)
+        defer { _ = unsafeBitCast(table.load(fromByteOffset: 24, as: UnsafeRawPointer.self), to: ReleaseFn.self)(iface) }
+        var log = [UInt8](repeating: 0, count: 512)
+        let read = unsafeBitCast(table.load(fromByteOffset: 40, as: UnsafeRawPointer.self), to: ReadFn.self)
+        let r = log.withUnsafeMutableBytes { read(iface, $0.baseAddress!) }
+        return r == KERN_SUCCESS ? SMART(log: log) : nil
+    }
+}
+
 // MARK: - Thermal pressure (libnotify)
 
 @_silgen_name("notify_register_check") private func notify_register_check(_ name: UnsafePointer<CChar>, _ token: UnsafeMutablePointer<Int32>) -> UInt32
