@@ -142,3 +142,7 @@ Development aids:
 - `hogwatch --render <dir>` renders each tab to PNG and quits (scroll views and AppKit controls do not render).
 
 The ⓘ button in the panel shows the version and links back to this repository.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
