@@ -1,25 +1,49 @@
 # hogwatch
 
-Menu bar app for macOS (Apple Silicon) that shows system load at a glance and posts a notification
-when it gets critical, naming the process behind it. Built after a Mac crawled at load 200 because
-of forgotten test runs and two orphaned headless Chromiums that had been burning CPU for 15 days.
+A small menu bar app for Apple Silicon Macs that shows what is eating your machine — CPU, memory,
+SSD, GPU, temperature, Docker and open ports — and tells you when it gets critical, naming the
+process behind it.
+
+<img src="docs/temperature-tab.png" alt="hogwatch panel with the temperature tab: a MacBook drawn from above with a heat map of the sensors" width="340">
+
+It exists because a Mac once crawled along at a load average of 200: parallel test runs, Spotlight
+and two headless Chromiums left behind by Playwright that had been burning CPU for 15 days. Activity
+Monitor shows all of that, but only if you go and look. hogwatch puts the load in the menu bar,
+flags **orphaned processes** (busy processes whose parent is gone) and sends a notification before
+the machine becomes unusable.
+
+- No dependencies, no Xcode project, no root. One `swiftc` call builds it.
+- Reads everything the system offers without privileges, including temperatures, clock speeds and
+  SSD health through private Apple interfaces (see [Limitations](#limitations)).
+- The user interface is in German.
+
+## Requirements
+
+- Mac with Apple Silicon, macOS 15 or later
+- Xcode or the Xcode command line tools (Swift 6)
 
 ## Build and run
 
-Needs the Xcode command line tools (Swift 6), macOS 15 or later. No dependencies, no Xcode project.
+```sh
+git clone https://github.com/andrehickmann/hogwatch.git
+cd hogwatch
+./build.sh install   # builds, copies Hogwatch.app to ~/Applications and starts it
+```
+
+Other targets:
 
 ```sh
-./build.sh           # build/Hogwatch.app
-./build.sh install   # copy to ~/Applications and start (stops a running instance first)
+./build.sh           # build only: build/Hogwatch.app
 ./build.sh test      # self-check of the parsing and alert logic
 ```
 
-On first start macOS asks whether hogwatch may send notifications — allow it.
+The app is signed ad hoc on your machine, so Gatekeeper does not get in the way. On first start
+macOS asks whether hogwatch may send notifications — allow it.
 `~/Applications/Hogwatch.app/Contents/MacOS/hogwatch --demo-alert` posts a test notification.
 "Bei Anmeldung" in the panel starts it at login.
 
 If the icon does not appear: on a MacBook with a notch, menu bar icons that do not fit are hidden
-behind it. Cmd-drag other icons out of the menu bar, or move hogwatch further right.
+behind it. Cmd-drag other icons out of the menu bar to make room.
 
 ## What it shows
 
@@ -72,6 +96,20 @@ All readable without root:
 - NVMe SMART log through the `NVMeSMARTLib` IOKit plug-in, read every 10 minutes
 - Docker Engine API over the Unix socket (via `curl`), only while Docker Desktop's VM runs — any API call would wake it from Resource Saver
 - `lsof` for listening ports
+
+## Limitations
+
+- **Private interfaces.** Temperatures (`IOHIDEventSystemClient`), clock speeds (`IOReport`) and
+  the responsible-app lookup are not public API. A macOS update may break them; the app then shows
+  "–" for those values and keeps working.
+- **Without root**, per-process disk IO, arguments and working directory are only available for
+  your own processes. IO of system daemons such as `fseventsd` or Spotlight cannot be attributed.
+  Memory of other users' processes is resident memory only.
+- **Heat map** is drawn for the MacBook Pro 14" with M1 Pro (`MacBookPro18,x`); other Macs get a
+  plain list. Sensor positions are approximate — Apple publishes no sensor map.
+- **Clock tables** are read from keys used by M1–M3 chips; later chips show "–" until their keys
+  are added.
+- **Docker** support targets Docker Desktop. Colima or OrbStack would need their own VM detection.
 
 ## Layout
 
