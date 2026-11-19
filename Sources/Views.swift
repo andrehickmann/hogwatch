@@ -53,26 +53,31 @@ struct PanelView: View {
             case .cpu:
                 Header(left: "Last \(Int(s.load[0].rounded())) · \(Int(s.load[1].rounded())) · \(Int(s.load[2].rounded())) · \(s.cores) Kerne",
                        right: "P \(Fmt.ghz(s.pMHz)) · E \(Fmt.ghz(s.eMHz)) GHz")
+                if let total = s.power.total {
+                    let ane = (s.power.ane ?? 0) >= 0.1 ? " · ANE \(Fmt.watt(s.power.ane))" : ""
+                    Header(left: "CPU \(Fmt.watt(s.power.cpu)) · GPU \(Fmt.watt(s.power.gpu))\(ane) · RAM \(Fmt.watt(s.power.dram)) W",
+                           right: "Chip \(Fmt.watt(total)) W")
+                }
                 Spark(points: recent, value: \.load, warn: Double(s.cores) * Limits.loadWarnFactor, color: levelColor(s.loadLevel))
-                ForEach(s.topCPU) { ProcLine(title: $0.title, value: Fmt.pct($0.cpu), sub: $0.origin) }
+                ProcList(list: s.topCPU) { Fmt.pct($0.cpu) }
             case .mem:
                 Header(left: "\(Fmt.gb(s.memUsed)) von \(Fmt.gb(s.memTotal)) · Druck: \(pressureNames[s.pressure] ?? "\(s.pressure)")",
                        right: "Swap \(Fmt.gb(s.swapUsed))", rightColor: s.swapUsed > 1_073_741_824 ? .orange : .secondary)
                 Header(left: "Apps \(Fmt.gb(s.memApp)) · System \(Fmt.gb(s.memWired)) · Komprimiert \(Fmt.gb(s.memCompressed))")
                 Spark(points: recent, value: \.mem, warn: 85, color: levelColor(s.memLevel))
-                ForEach(s.topMem) { ProcLine(title: $0.title, value: Fmt.gb($0.mem), sub: $0.origin) }
+                ProcList(list: s.topMem) { Fmt.gb($0.mem) }
                 Note("Wie die Aktivitätsanzeige: inklusive komprimierter und ausgelagerter Seiten, daher größer als „Apps“. Fremde Prozesse (root) nur mit residentem Speicher.")
             case .ssd:
                 Header(left: "R \(Int(s.readBps / 1_048_576)) · W \(Int(s.writeBps / 1_048_576)) MB/s", right: "\(Int(s.iops)) IOPS")
                 if let h = s.smart { SSDHealthView(h: h, today: s.writtenToday, since: s.writtenSince) }
                 Spark(points: recent, value: \.ssd, warn: Limits.diskMBps, color: levelColor(s.diskLevel))
-                ForEach(s.topIO) { ProcLine(title: $0.title, value: "\(Fmt.mb($0.io ?? 0))/s", sub: $0.origin) }
+                ProcList(list: s.topIO) { "\(Fmt.mb($0.io ?? 0))/s" }
                 Note("IO von Systemprozessen (fseventsd, Spotlight) ist ohne Root nicht zuordenbar.")
             case .gpu:
                 Header(left: "\(s.gpuUtil.map { Fmt.pct($0) } ?? "–") Auslastung",
                        right: "\(Fmt.ghz(s.gpuMHz)) / \(Fmt.ghz(m.maxMHz.gpu)) GHz")
                 Spark(points: recent, value: \.gpu, color: .secondary)
-                ForEach(s.topGPU) { ProcLine(title: $0.title, value: Fmt.pct($0.gpu ?? 0), sub: $0.origin) }
+                ProcList(list: s.topGPU) { Fmt.pct($0.gpu ?? 0) }
             case .temp:
                 if Sys.model.hasPrefix("MacBookPro18") {
                     MacHeatmap(s: s, maxMHz: m.maxMHz)
@@ -136,12 +141,21 @@ struct ProcLine: View {
     let title: String
     let value: String
     var sub: String?
+    /// Set for process rows: adds the info button that explains what the process does.
+    var info: Proc?
+    @State private var shown = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
+            HStack(spacing: 6) {
                 Text(title).lineLimit(1)
-                Spacer()
+                Spacer(minLength: 4)
+                if let info {
+                    Button { shown.toggle() } label: { Image(systemName: "info.circle") }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(shown ? AnyShapeStyle(.tint) : AnyShapeStyle(.tertiary))
+                        .popover(isPresented: $shown, arrowEdge: .leading) { ProcInfo(p: info) }
+                }
                 Text(value).font(.system(.caption, design: .monospaced))
             }
             .font(.callout)
@@ -150,6 +164,51 @@ struct ProcLine: View {
             }
         }
         .padding(.vertical, 1)
+        .help(Describe.purpose(title).map { "\(title) \u{2014} \($0)" } ?? title)
+    }
+}
+
+/// What a process is, behind the info button of a row.
+/// The tab's process list. It scrolls, because fifteen rows do not fit the panel, and it holds its
+/// order while the pointer is on it — every sample reorders the rows, moving the button being aimed at.
+struct ProcList: View {
+    let list: [Proc]
+    let value: (Proc) -> String
+    @State private var held: [Int32] = []
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Freeze.order(list, id: \.pid, following: held)) {
+                    ProcLine(title: $0.title, value: value($0), sub: $0.origin, info: $0)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        // The system bar is fixed-width and, with "always show scroll bars", sits right on the numbers.
+        .scrollIndicators(.hidden)
+        .onHover { held = $0 ? list.map(\.pid) : [] }
+    }
+}
+
+struct ProcInfo: View {
+    let p: Proc
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(p.title).font(.headline).fixedSize(horizontal: false, vertical: true)
+            if let what = Describe.purpose(p.title) {
+                Text(what).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("Diesen Prozess kennt hogwatch nicht.").font(.caption).foregroundStyle(.tertiary)
+            }
+            if let origin = p.origin {
+                Text(origin).font(.caption2).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
+            }
+            Text("PID \(p.pid) · läuft seit \(Fmt.age(p.age))").font(.caption2).foregroundStyle(.tertiary)
+        }
+        .padding(12)
+        .frame(width: 260, alignment: .leading)
     }
 }
 

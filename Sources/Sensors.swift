@@ -335,3 +335,53 @@ final class FrequencyReader {
         return []
     }
 }
+
+// MARK: - Power draw (private IOReport)
+
+@_silgen_name("IOReportChannelGetUnitLabel")
+private func IOReportChannelGetUnitLabel(_ ch: CFDictionary) -> Unmanaged<CFString>?
+@_silgen_name("IOReportSimpleGetIntegerValue")
+private func IOReportSimpleGetIntegerValue(_ ch: CFDictionary, _ i: Int32) -> Int64
+
+/// Watt from the IOReport energy counters — the same numbers powermetrics prints, but without root.
+final class PowerReader {
+    private var sub: OpaquePointer?
+    private var subbed: CFMutableDictionary?
+    private var last: CFDictionary?
+    private var lastTime: TimeInterval?
+
+    init() {
+        guard let desired = IOReportCopyChannelsInGroup("Energy Model" as CFString, nil, 0, 0, 0)?.takeRetainedValue() else { return }
+        var s: Unmanaged<CFMutableDictionary>?
+        sub = IOReportCreateSubscription(nil, desired, &s, 0, nil)
+        subbed = s?.takeRetainedValue()
+    }
+
+    /// Average draw since the previous call. The channels of this group nest — "CPU Energy" already
+    /// contains the per-core and per-state ones — so each block is taken from its roll-up, never summed.
+    func read() -> Power {
+        guard let sub, let subbed, let now = IOReportCreateSamples(sub, subbed, nil)?.takeRetainedValue() else { return Power() }
+        let t = ProcessInfo.processInfo.systemUptime
+        defer { last = now; lastTime = t }
+        guard let last, let lastTime,
+              let delta = IOReportCreateSamplesDelta(last, now, nil)?.takeRetainedValue() as? [String: Any],
+              let channels = delta["IOReportChannels"] as? [NSDictionary] else { return Power() }
+        let dt = t - lastTime
+        var p = Power()
+        for ch in channels {
+            let c = ch as CFDictionary
+            guard let name = IOReportChannelGetChannelName(c)?.takeUnretainedValue() as String?,
+                  ["CPU Energy", "GPU Energy", "ANE Energy", "ANE0", "DRAM0"].contains(name),
+                  let w = Energy.watts(IOReportSimpleGetIntegerValue(c, 0),
+                                       unit: IOReportChannelGetUnitLabel(c)?.takeUnretainedValue() as String? ?? "",
+                                       dt: dt) else { continue }
+            switch name {
+            case "CPU Energy": p.cpu = w
+            case "GPU Energy": p.gpu = w
+            case "DRAM0": p.dram = w
+            default: p.ane = w
+            }
+        }
+        return p
+    }
+}

@@ -138,6 +138,105 @@ enum Describe {
         guard interpreters.contains(name) || name.hasPrefix("python") else { return nil }
         return args.dropFirst().first { !$0.hasPrefix("-") }.map { ($0 as NSString).lastPathComponent }
     }
+
+    /// One sentence on what a process does, for the row's info popover. German: the user reads it.
+    static func purpose(_ name: String) -> String? {
+        if let p = purposes[name] { return p }
+        if name.hasPrefix("mdworker") || name.hasPrefix("mds") { return purposes["mds"] }
+        if name.hasPrefix("com.apple.WebKit") { return "zeigt eine Webseite an" }
+        if name.contains("(Renderer)") { return "stellt einen Tab oder ein Fenster dar \u{2014} jeder bekommt einen eigenen Prozess" }
+        if name.contains("(GPU)") { return "zeichnet die Oberfl\u{e4}che \u{fc}ber die Grafikkarte" }
+        if name.contains("(Plugin)") || name.contains("(Utility)") { return "f\u{fc}hrt einen Teil der App getrennt aus" }
+        if name.hasPrefix("spotlightknowledged") { return purposes["mds"] }
+        if name.hasSuffix(" Helper") { return "Hilfsprozess der App" }
+        if name.hasSuffix("XPCService") || name.hasSuffix(".xpc") { return "Hintergrunddienst eines Programms" }
+        return nil
+    }
+
+    /// Only entries that are certain; an unknown process shows its full name and nothing else.
+    static let purposes: [String: String] = [
+        "kernel_task": "der Kern von macOS; h\u{e4}lt bei Hitze auch Rechenzeit frei, um den Mac zu k\u{fc}hlen",
+        "launchd": "startet und \u{fc}berwacht alle anderen Prozesse",
+        "WindowServer": "zeichnet alle Fenster und verarbeitet Maus und Tastatur",
+        "loginwindow": "verwaltet die angemeldete Sitzung",
+        "Finder": "Schreibtisch und Dateifenster",
+        "Dock": "Dock, Mission Control und Launchpad",
+        "ControlCenter": "Kontrollzentrum und Menüleistensymbole",
+        "NotificationCenter": "Mitteilungen und Widgets",
+        "Spotlight": "das Suchfenster",
+        "WindowManager": "Stage Manager und Fensteranordnung",
+        "SystemUIServer": "\u{e4}ltere Men\u{fc}leistensymbole",
+        "fseventsd": "protokolliert jede Dateiänderung f\u{fc}r Spotlight und Time Machine",
+        "mds": "baut den Spotlight-Index auf und durchsucht daf\u{fc}r neue Dateien",
+        "corespotlightd": "Spotlight-Index der Apps",
+        "installd": "installiert Pakete und Systemupdates im Hintergrund",
+        "softwareupdated": "sucht und l\u{e4}dt Systemupdates",
+        "mobileassetd": "l\u{e4}dt Systemkomponenten nach: Stimmen, W\u{f6}rterb\u{fc}cher, Modelle",
+        "syspolicyd": "Gatekeeper: pr\u{fc}ft, ob ein Programm ausgef\u{fc}hrt werden darf",
+        "amfid": "pr\u{fc}ft die Signatur startender Programme",
+        "trustd": "pr\u{fc}ft Zertifikate von Servern und Programmen",
+        "securityd": "verwaltet Schl\u{fc}sselbund und Zugangsdaten",
+        "secd": "h\u{e4}lt den Schl\u{fc}sselbund zwischen Ger\u{e4}ten synchron",
+        "tccd": "verwaltet die Zugriffsrechte auf Kamera, Mikrofon, Ordner",
+        "sandboxd": "\u{fc}berwacht die Sandbox-Grenzen der Programme",
+        "opendirectoryd": "Benutzerkonten und Gruppen",
+        "cfprefsd": "liest und schreibt die Einstellungen aller Programme",
+        "distnoted": "verteilt Nachrichten zwischen Programmen",
+        "notifyd": "verteilt Systemmeldungen zwischen Prozessen",
+        "logd": "schreibt das Systemprotokoll",
+        "syslogd": "schreibt das klassische Systemprotokoll",
+        "diskarbitrationd": "bindet Laufwerke ein und wieder aus",
+        "revisiond": "verwaltet die Versionen von Dokumenten",
+        "backupd": "Time Machine sichert gerade",
+        "backupd-helper": "pr\u{fc}ft, ob eine Time-Machine-Sicherung f\u{e4}llig ist",
+        "bird": "synchronisiert iCloud Drive",
+        "cloudd": "synchronisiert iCloud-Daten der Programme",
+        "fileproviderd": "stellt Dateien von iCloud, Dropbox und \u{e4}hnlichen Diensten bereit",
+        "nsurlsessiond": "l\u{e4}dt im Hintergrund herunter und hoch",
+        "apsd": "h\u{e4}lt die Verbindung f\u{fc}r Push-Nachrichten offen",
+        "identityservicesd": "iMessage und FaceTime",
+        "akd": "meldet die Apple-ID an",
+        "AppleIDAuthAgent": "meldet die Apple-ID an",
+        "mDNSResponder": "l\u{f6}st Namen auf: DNS und Ger\u{e4}te im lokalen Netz",
+        "configd": "Netzwerkeinstellungen und Verbindungswechsel",
+        "symptomsd": "beobachtet, wie gut das Netz gerade funktioniert",
+        "socketfilterfw": "die Firewall",
+        "airportd": "WLAN-Verbindung",
+        "bluetoothd": "Bluetooth-Ger\u{e4}te",
+        "coreaudiod": "Tonausgabe und -aufnahme",
+        "hidd": "Tastatur, Maus und Trackpad",
+        "powerd": "Ruhezustand und Energieverwaltung",
+        "thermalmonitord": "\u{fc}berwacht die Temperatur",
+        "rapportd": "Handoff, universelle Zwischenablage und Sidecar",
+        "sharingd": "AirDrop, Freigaben und Handoff",
+        "photoanalysisd": "durchsucht die Fotos nach Gesichtern, Orten und Objekten",
+        "photolibraryd": "verwaltet die Fotos-Mediathek",
+        "mediaanalysisd": "erkennt Text und Objekte in Bildern und Videos",
+        "suggestd": "wertet Inhalte f\u{fc}r Siri-Vorschl\u{e4}ge aus",
+        "parsecd": "Siri- und Spotlight-Suche im Internet",
+        "knowledge-agent": "sammelt Ger\u{e4}teaktivit\u{e4}t f\u{fc}r Vorschl\u{e4}ge",
+        "BiomeAgent": "sammelt Ger\u{e4}teaktivit\u{e4}t f\u{fc}r Vorschl\u{e4}ge und Fokus",
+        "coreduetd": "sagt voraus, was als N\u{e4}chstes gebraucht wird",
+        "runningboardd": "teilt laufenden Programmen Rechenzeit und Speicher zu",
+        "containermanagerd": "verwaltet die Datenordner der Programme",
+        "lsd": "verkn\u{fc}pft Dateitypen mit Programmen",
+        "pboard": "die Zwischenablage",
+        "universalaccessd": "Bedienungshilfen",
+        "ReportCrash": "schreibt einen Absturzbericht",
+        "spindump": "protokolliert ein h\u{e4}ngendes Programm",
+        "UserEventAgent": "reagiert auf Systemereignisse wie angeschlossene Ger\u{e4}te",
+        "kernelmanagerd": "verwaltet Kernel-Erweiterungen",
+        "VTDecoderXPCService": "dekodiert Video",
+        "MTLCompilerService": "\u{fc}bersetzt Grafik-Shader f\u{fc}r Metal",
+        "XProtectService": "pr\u{fc}ft Dateien auf bekannte Schadsoftware",
+        "dasd": "plant Hintergrundarbeiten ein, wenn der Mac Luft hat",
+        "duetexpertd": "sagt aus der Nutzung voraus, was als N\u{e4}chstes gebraucht wird",
+        "triald": "steuert, welche Systemfunktionen hier erprobt werden",
+        "node": "ein Node.js-Programm \u{2014} meist ein Entwicklungswerkzeug oder Server",
+        "ssh": "offene SSH-Verbindung",
+        "git": "Git-Befehl",
+        "yes": "gibt endlos Text aus \u{2014} meist ein vergessener Testbefehl",
+    ]
 }
 
 /// NVMe SMART / health information log (log page 2, 512 bytes, little endian).
@@ -221,10 +320,57 @@ enum Fmt {
         return (mhz / 1000).formatted(.number.precision(.fractionLength(1)))
     }
 
+    /// Watt without the unit — one decimal below 10 W, whole watts above.
+    static func watt(_ w: Double?) -> String {
+        guard let w else { return "–" }
+        return w.formatted(.number.precision(.fractionLength(w < 10 ? 1 : 0)))
+    }
+
     static func pct(_ v: Double) -> String { "\(Int(v.rounded())) %" }
 
     static func shortPath(_ p: String) -> String {
         let home = NSHomeDirectory()
         return p.hasPrefix(home) ? "~" + p.dropFirst(home.count) : p
+    }
+}
+
+struct Power {
+    var cpu: Double?
+    var gpu: Double?
+    var ane: Double?
+    var dram: Double?
+
+    /// Everything the chip's counters cover. Not the whole machine: display, SSD and Wi-Fi
+    /// have no channel here, so the wall draw is higher.
+    var total: Double? {
+        let parts = [cpu, gpu, ane, dram].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.reduce(0, +)
+    }
+}
+
+enum Energy {
+    /// Watt from an energy delta reported by IOReport, whose channels label their own unit.
+    static func watts(_ value: Int64, unit: String, dt: TimeInterval) -> Double? {
+        let factor: Double
+        switch unit.trimmingCharacters(in: .whitespaces) {
+        case "J": factor = 1
+        case "mJ": factor = 1e-3
+        case "uJ", "\u{00b5}J": factor = 1e-6
+        case "nJ": factor = 1e-9
+        default: return nil
+        }
+        return dt > 0 ? Double(value) * factor / dt : nil
+    }
+}
+
+enum Freeze {
+    /// Rows where the pointer found them: known ids keep their rank, anything new goes to the end.
+    static func order<T>(_ items: [T], id: (T) -> Int32, following pids: [Int32]) -> [T] {
+        guard !pids.isEmpty else { return items }
+        let rank = Dictionary(pids.enumerated().map { ($1, $0) }, uniquingKeysWith: { a, _ in a })
+        return items.enumerated()
+            .map { (rank[id($0.element)] ?? pids.count + $0.offset, $0.element) }
+            .sorted { $0.0 < $1.0 }
+            .map { $0.1 }
     }
 }

@@ -29,6 +29,7 @@ enum Demo {
         s.writeBps = 95 * mb
         s.iops = 3400
         s.gpuUtil = 18
+        s.power = Power(cpu: 11.4, gpu: 1.8, ane: 0, dram: 1.6)
         s.eMHz = 1840
         s.pMHz = 3110
         s.gpuMHz = 720

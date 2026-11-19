@@ -68,6 +68,20 @@ log[160] = 1
 check(SMART(log: log)?.level == 2, "media error is a problem")
 check(SMART(log: [1, 2, 3]) == nil, "short log")
 
+check(Energy.watts(29857, unit: "mJ", dt: 2) == 29.857 / 2, "mJ to watt")
+check(Energy.watts(432_780_030, unit: " nJ ", dt: 2).map { abs($0 - 0.216) < 0.001 } == true, "nJ to watt")
+check(Energy.watts(1, unit: "events", dt: 2) == nil && Energy.watts(1, unit: "mJ", dt: 0) == nil, "no watt without energy or time")
+check(Power(cpu: 14.9, gpu: 0.2, ane: nil, dram: 1.8).total.map { abs($0 - 16.9) < 0.001 } == true && Power().total == nil, "chip total skips missing parts")
+check(Fmt.watt(14.94) == "15" && Fmt.watt(1.44).hasPrefix("1") && Fmt.watt(1.44).count == 3 && Fmt.watt(nil) == "–", "watt format")
+
+check(Freeze.order([1, 2, 3, 9] as [Int32], id: { $0 }, following: [3, 1, 2]) == [3, 1, 2, 9], "held order wins, new pids go last")
+check(Freeze.order([5, 6] as [Int32], id: { $0 }, following: []) == [5, 6], "nothing held, nothing moved")
+check(Freeze.order([7] as [Int32], id: { $0 }, following: [1, 2]) == [7], "a row gone from the hold still shows")
+
+check(Describe.purpose("fseventsd") != nil && Describe.purpose("mdworker_shared") == Describe.purpose("mds"), "known daemons explained")
+check(Describe.purpose("Claude Helper (Renderer)")?.contains("Tab") == true, "renderer helpers explained")
+check(Describe.purpose("some-private-binary") == nil, "unknown process stays unexplained")
+
 check(Fmt.age(15 * 86400 + 5) == "15 T" && Fmt.age(3 * 3600) == "3 h" && Fmt.age(30) == "1 min", "age format")
 
 print(failures == 0 ? "selfcheck ok" : "selfcheck: \(failures) failure(s)")

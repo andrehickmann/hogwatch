@@ -65,6 +65,7 @@ struct Snapshot {
     var thermal = 0
     var lowPower = false
     var temps = Temps()
+    var power = Power()
     var topCPU: [Proc] = []
     var topMem: [Proc] = []
     var topIO: [Proc] = []
@@ -101,6 +102,7 @@ final class Sampler {
     private var prevDisk: (read: UInt64, write: UInt64, ops: UInt64)?
     private let temps = TemperatureReader()
     let freq = FrequencyReader()
+    private let watts = PowerReader()
 
     // per-process state
     private var procTime: TimeInterval?
@@ -165,6 +167,7 @@ final class Sampler {
         s.thermal = Thermal.level()
         s.lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
         s.temps = temps.read()
+        s.power = watts.read()
 
         let gpu = Sys.gpu()
         s.gpuUtil = gpu.util
@@ -238,10 +241,10 @@ final class Sampler {
         func top(_ n: Int, above floor: Double, by key: (ProcRow) -> Double) -> [Proc] {
             parsed.filter { key($0) > floor }.sorted { key($0) > key($1) }.prefix(n).map(proc)
         }
-        s.topCPU = top(6, above: 0.5) { cpu[$0.pid] ?? 0 }
-        s.topMem = top(8, above: 0) { mem[$0.pid] ?? 0 }
-        s.topIO = top(6, above: 100_000) { io[$0.pid] ?? 0 }
-        s.topGPU = top(6, above: 0.5) { gpu[$0.pid] ?? 0 }
+        s.topCPU = top(15, above: 0.5) { cpu[$0.pid] ?? 0 }
+        s.topMem = top(15, above: 0) { mem[$0.pid] ?? 0 }
+        s.topIO = top(15, above: 100_000) { io[$0.pid] ?? 0 }
+        s.topGPU = top(15, above: 0.5) { gpu[$0.pid] ?? 0 }
         let dockerVM = parsed.first { $0.name == Self.vmProcess && describe($0).tool == "für Docker" }
         dockerVMRunning = dockerVM != nil
         s.dockerVMCPU = dockerVM.flatMap { cpu[$0.pid] }
